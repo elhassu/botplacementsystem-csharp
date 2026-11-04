@@ -33,6 +33,10 @@ public class Plugin : BaseUnityPlugin
     public static int ChanceStep;
     public static int MinimumChance;
     public static int MaximumChance;
+    public static bool BossSpawnDistanceCheck;
+    public static float BossSpawnDistance;
+    public static float BossSpawnDistanceSmallMaps;
+    public static bool BossSpawnDistanceIgnoreTriggered;
 
     public static bool PmcSpawnAnywhere;
     public static float CustomsPmcSpawnDistanceCheck;
@@ -90,6 +94,7 @@ public class Plugin : BaseUnityPlugin
         new BossSpawnScenarioSpawnProgressPatch().Enable();
         new BossProgressiveRegressivePatch().Enable();
         new PmcSpawnHookPatch().Enable();
+        new BossSpawnDistancePatch().Enable();
         new AssaultGroupPatch().Enable();
         new NonWavesSpawnSystemPatch().Enable();
         new TryToSpawnInZonePatch().Enable();
