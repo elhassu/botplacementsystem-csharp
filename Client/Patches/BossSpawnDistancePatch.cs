@@ -20,11 +20,16 @@ namespace BotPlacementSystemClient.Patches;
 /// - chosen point far enough from every human player: unchanged
 /// - too close: swap in a far-enough point from the same zone (followers kept together)
 /// - no far-enough point in the zone: hand the wave back to vanilla's delay queue to retry later
+/// - no human player in the raid yet (start-of-raid bosses on a Fika/headless host spawn before clients load in):
+///   wait for one to appear, then run the check, instead of letting the boss spawn unchecked
 /// ABPS PMCs never reach this method (PmcSpawnHookPatch spawns them itself).
 /// </summary>
 internal class BossSpawnDistancePatch : ModulePatch
 {
     private const float FollowerGroupRadius = 20f;
+
+    // Waves already held back once waiting for players; if the wait timed out they spawn unchecked rather than looping
+    private static readonly HashSet<BossLocationSpawn> WaitedForPlayers = new();
 
     protected override MethodBase GetTargetMethod()
     {
@@ -32,7 +37,7 @@ internal class BossSpawnDistancePatch : ModulePatch
     }
 
     [PatchPrefix]
-    private static bool PatchPrefix(BotBossSpawn __instance, BotCreationData creationData, BossLocationSpawn wave, BotSpawnParams spawnParams, BotZone botZone, List<ISpawnPoint> openedPositions, ref Task __result)
+    private static bool PatchPrefix(BotBossSpawn __instance, BotCreationData creationData, BossLocationSpawn wave, BotSpawnParams spawnParams, int followersCount, BotZone botZone, List<ISpawnPoint> openedPositions, ref Task __result)
     {
         try
         {
@@ -42,24 +47,39 @@ internal class BossSpawnDistancePatch : ModulePatch
             if (Plugin.BossSpawnDistanceIgnoreTriggered && !string.IsNullOrEmpty(wave.TriggerName)) return true;
 
             var humans = GetHumanPlayers();
-            if (humans.Count == 0) return true;
+            if (humans.Count == 0)
+            {
+                if (!WaitedForPlayers.Add(wave))
+                {
+                    WaitedForPlayers.Remove(wave);
+                    Plugin.LogSource.LogWarning($"BossSpawnDistance | {wave.BossType} | Still no human players in the raid, spawning without the distance check");
+                    return true;
+                }
+
+                Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | No human players in the raid yet, holding the spawn until one loads in");
+                __result = WaitForPlayersThenSpawn(__instance, creationData, wave, spawnParams, followersCount, botZone, openedPositions);
+                return false;
+            }
+            WaitedForPlayers.Remove(wave);
 
             var distance = GetDistanceForMap(Utility.CurrentLocation);
-            if (IsValid(openedPositions[0], humans, distance)) return true;
+            if (IsValid(openedPositions[0], humans, distance))
+            {
+                Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | Spawn point OK in zone {botZone?.NameZone} | Nearest player: {NearestPlayerDistance(openedPositions[0], humans):F1}m (min {distance}m)");
+                return true;
+            }
 
             var replacement = GetReplacementPoints(botZone, humans, distance, openedPositions.Count);
             if (replacement.Count > 0)
             {
-                if (Plugin.DebugLogging)
-                    Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | Spawn point within {distance}m of a player, moved within zone {botZone?.NameZone} | Nearest player: {NearestPlayerDistance(replacement[0], humans):F1}m");
+                Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | Spawn point within {distance}m of a player, moved within zone {botZone?.NameZone} | Nearest player: {NearestPlayerDistance(replacement[0], humans):F1}m");
 
                 openedPositions.Clear();
                 openedPositions.AddRange(replacement);
                 return true;
             }
 
-            if (Plugin.DebugLogging)
-                Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | No spawn point in zone {botZone?.NameZone} at least {distance}m from players, delaying spawn");
+            Plugin.LogSource.LogInfo($"BossSpawnDistance | {wave.BossType} | No spawn point in zone {botZone?.NameZone} at least {distance}m from players, delaying spawn");
 
             __instance.DelayBossSpawn(wave, spawnParams, creationData);
             __result = Task.CompletedTask;
@@ -70,6 +90,13 @@ internal class BossSpawnDistancePatch : ModulePatch
             Plugin.LogSource.LogError($"BossSpawnDistancePatch EXCEPTION: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             return true;
         }
+    }
+
+    private static async Task WaitForPlayersThenSpawn(BotBossSpawn bossSpawn, BotCreationData creationData, BossLocationSpawn wave, BotSpawnParams spawnParams, int followersCount, BotZone botZone, List<ISpawnPoint> openedPositions)
+    {
+        await Utility.WaitForHumanPlayer();
+        // Re-enters PatchPrefix, which now sees the players (or, after a timeout, lets the spawn through)
+        await bossSpawn.SpawnBossAndFollowers(creationData, wave, spawnParams, followersCount, botZone, openedPositions);
     }
 
     private static List<Player> GetHumanPlayers()
