@@ -26,6 +26,10 @@ internal static class AbpsConfig
     private static ConfigEntry<int> _chanceStep;
     private static ConfigEntry<int> _minimumChance;
     private static ConfigEntry<int> _maximumChance;
+    private static ConfigEntry<bool> _bossSpawnDistanceCheck;
+    private static ConfigEntry<float> _bossSpawnDistance;
+    private static ConfigEntry<float> _bossSpawnDistanceSmallMaps;
+    private static ConfigEntry<bool> _bossSpawnDistanceIgnoreTriggered;
 
     private const string PmcConfig = "3. PMC Settings";
     private static ConfigEntry<bool> _pmcSpawnAnywhere;
@@ -235,6 +239,46 @@ internal static class AbpsConfig
                 new ConfigurationManagerAttributes { Order = _loadOrder-- }));
         Plugin.MaximumChance = _maximumChance.Value;
         _maximumChance.SettingChanged += ABPS_SettingChanged;
+
+        _bossSpawnDistanceCheck = config.Bind(
+            BossConfig,
+            "Boss Spawn Distance Check",
+            true,
+            new ConfigDescription("Stop bosses (and seasonal event bosses like the Halloween cultists) spawning right next to players.\nIf the spawn point vanilla picked is too close to a player, another point in the same zone is used. If the whole zone is too close, the spawn is delayed and retried until players move away.\nOnly needed on the raid host (Fika).",
+                null,
+                new ConfigurationManagerAttributes { Order = _loadOrder-- }));
+        Plugin.BossSpawnDistanceCheck = _bossSpawnDistanceCheck.Value;
+        _bossSpawnDistanceCheck.SettingChanged += ABPS_SettingChanged;
+
+        _bossSpawnDistance = config.Bind(
+            BossConfig,
+            "Boss Spawn Distance",
+            50f,
+            new ConfigDescription("Minimum distance (meters) between a boss spawn point and any player.\nSetting this too high can delay bosses whose zone is small or near player spawns.",
+                new AcceptableValueRange<float>(10f, 150f),
+                new ConfigurationManagerAttributes { Order = _loadOrder-- }));
+        Plugin.BossSpawnDistance = _bossSpawnDistance.Value;
+        _bossSpawnDistance.SettingChanged += ABPS_SettingChanged;
+
+        _bossSpawnDistanceSmallMaps = config.Bind(
+            BossConfig,
+            "Boss Spawn Distance - Small Maps",
+            25f,
+            new ConfigDescription("Minimum distance (meters) between a boss spawn point and any player on Factory, Labs and Labyrinth.",
+                new AcceptableValueRange<float>(5f, 75f),
+                new ConfigurationManagerAttributes { Order = _loadOrder-- }));
+        Plugin.BossSpawnDistanceSmallMaps = _bossSpawnDistanceSmallMaps.Value;
+        _bossSpawnDistanceSmallMaps.SettingChanged += ABPS_SettingChanged;
+
+        _bossSpawnDistanceIgnoreTriggered = config.Bind(
+            BossConfig,
+            "Boss Spawn Distance - Ignore Triggered Spawns",
+            true,
+            new ConfigDescription("Don't apply the distance check to spawns that are triggered by something in the raid (e.g. Reserve lever Raiders, the Halloween summoning, Kaban's snipers), as those are meant to appear near the trigger.",
+                null,
+                new ConfigurationManagerAttributes { Order = _loadOrder-- }));
+        Plugin.BossSpawnDistanceIgnoreTriggered = _bossSpawnDistanceIgnoreTriggered.Value;
+        _bossSpawnDistanceIgnoreTriggered.SettingChanged += ABPS_SettingChanged;
 
         // PMC Settings
         _pmcSpawnAnywhere = config.Bind(
@@ -616,6 +660,10 @@ internal static class AbpsConfig
         Plugin.ChanceStep = _chanceStep.Value;
         Plugin.MinimumChance = _minimumChance.Value;
         Plugin.MaximumChance = _maximumChance.Value;
+        Plugin.BossSpawnDistanceCheck = _bossSpawnDistanceCheck.Value;
+        Plugin.BossSpawnDistance = _bossSpawnDistance.Value;
+        Plugin.BossSpawnDistanceSmallMaps = _bossSpawnDistanceSmallMaps.Value;
+        Plugin.BossSpawnDistanceIgnoreTriggered = _bossSpawnDistanceIgnoreTriggered.Value;
 
         Plugin.PmcSpawnAnywhere = _pmcSpawnAnywhere.Value;
         Plugin.CustomsPmcSpawnDistanceCheck = _customsPmcSpawnDistanceCheck.Value;
